@@ -1,0 +1,9 @@
+*.py[cod]
+*.egg-info
+.tox
+build
+dist
+docs/_build
+.idea/
+.cache/
+.DS_Store
