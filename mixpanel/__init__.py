@@ -48,6 +48,7 @@ def json_dumps(data, cls=None):
 
 
 class Mixpanel(object):
+    proxies = None
     """Instances of Mixpanel are used for all events and profile updates.
 
     :param str token: your project's Mixpanel token
@@ -62,8 +63,9 @@ class Mixpanel(object):
         The *serializer* parameter.
     """
 
-    def __init__(self, token, consumer=None, serializer=DatetimeSerializer):
+    def __init__(self, token, consumer=None, serializer=DatetimeSerializer, proxies=None):
         self._token = token
+        self.proxies = proxies
         self._consumer = consumer or Consumer()
         self._serializer = serializer
 
@@ -73,7 +75,7 @@ class Mixpanel(object):
     def _make_insert_id(self):
         return uuid.uuid4().hex
 
-    def track(self, distinct_id, event_name, properties=None, proxies=None, meta=None):
+    def track(self, distinct_id, event_name, properties=None, meta=None):
         """Record an event.
 
         :param str distinct_id: identifies the user triggering the event
@@ -102,7 +104,7 @@ class Mixpanel(object):
         }
         if meta:
             event.update(meta)
-        self._consumer.send('events', json_dumps(event, cls=self._serializer), proxies)
+        self._consumer.send('events', json_dumps(event, cls=self._serializer))
 
     def import_data(self, api_key, distinct_id, event_name, timestamp,
                     properties=None, meta=None, api_secret=None):
@@ -185,7 +187,7 @@ class Mixpanel(object):
         if meta:
             event.update(meta)
 
-        sync_consumer = Consumer()
+        sync_consumer = Consumer(proxies=self.proxies)
         sync_consumer.send('events', json_dumps(event, cls=self._serializer))
 
     def merge(self, api_key, distinct_id1, distinct_id2, meta=None, api_secret=None):
@@ -518,6 +520,7 @@ class MixpanelException(Exception):
 
 
 class Consumer(object):
+    proxies = None
     """
     A consumer that sends an HTTP request directly to the Mixpanel service, one
     per call to :meth:`~.send`.
@@ -543,7 +546,7 @@ class Consumer(object):
 
     def __init__(self, events_url=None, people_url=None, import_url=None,
             request_timeout=None, groups_url=None, api_host="api.mixpanel.com",
-            retry_limit=4, retry_backoff_factor=0.25, verify_cert=True):
+            retry_limit=4, retry_backoff_factor=0.25, verify_cert=True, proxies=None):
         # TODO: With next major version, make the above args kwarg-only, and reorder them.
         self._endpoints = {
             'events': events_url or 'https://{}/track'.format(api_host),
@@ -552,6 +555,7 @@ class Consumer(object):
             'imports': import_url or 'https://{}/import'.format(api_host),
         }
 
+        self.proxies = proxies
         self._verify_cert = verify_cert
         self._request_timeout = request_timeout
 
@@ -574,7 +578,7 @@ class Consumer(object):
         self._session = requests.Session()
         self._session.mount('http', adapter)
 
-    def send(self, endpoint, json_message, api_key=None, api_secret=None, proxies=None):
+    def send(self, endpoint, json_message, api_key=None, api_secret=None):
         """Immediately record an event or a profile update.
 
         :param endpoint: the Mixpanel API endpoint appropriate for the message
@@ -591,9 +595,9 @@ class Consumer(object):
         if endpoint not in self._endpoints:
             raise MixpanelException('No such endpoint "{0}". Valid endpoints are one of {1}'.format(endpoint, self._endpoints.keys()))
 
-        self._write_request(self._endpoints[endpoint], json_message, api_key, api_secret, proxies)
+        self._write_request(self._endpoints[endpoint], json_message, api_key, api_secret)
 
-    def _write_request(self, request_url, json_message, api_key=None, api_secret=None, proxies=None):
+    def _write_request(self, request_url, json_message, api_key=None, api_secret=None):
         if isinstance(api_key, tuple):
             # For compatibility with subclassers, allow the auth details to be
             # packed into the existing api_key param.
@@ -612,14 +616,23 @@ class Consumer(object):
             basic_auth = HTTPBasicAuth(api_secret, '')
 
         try:
-            response = self._session.post(
-                request_url,
-                data=params,
-                auth=basic_auth,
-                proxies=proxies,
-                timeout=self._request_timeout,
-                verify=self._verify_cert,
-            )
+            if self.proxies:
+                response = self._session.post(
+                    request_url,
+                    data=params,
+                    auth=basic_auth,
+                    proxies=self.proxies,
+                    timeout=self._request_timeout,
+                    verify=self._verify_cert,
+                )
+            else:
+                response = self._session.post(
+                    request_url,
+                    data=params,
+                    auth=basic_auth,
+                    timeout=self._request_timeout,
+                    verify=self._verify_cert,
+                )
         except Exception as e:
             six.raise_from(MixpanelException(e), e)
 
@@ -670,7 +683,7 @@ class BufferedConsumer(object):
             request_timeout=None, groups_url=None, api_host="api.mixpanel.com",
             retry_limit=4, retry_backoff_factor=0.25, verify_cert=True):
         self._consumer = Consumer(events_url, people_url, import_url, request_timeout,
-            groups_url, api_host, retry_limit, retry_backoff_factor, verify_cert)
+            groups_url, api_host, retry_limit, retry_backoff_factor, verify_cert, None)
         self._buffers = {
             'events': [],
             'people': [],
