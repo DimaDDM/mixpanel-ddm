@@ -73,7 +73,7 @@ class Mixpanel(object):
     def _make_insert_id(self):
         return uuid.uuid4().hex
 
-    def track(self, distinct_id, event_name, properties=None, meta=None):
+    def track(self, distinct_id, event_name, proxies=None, properties=None, meta=None):
         """Record an event.
 
         :param str distinct_id: identifies the user triggering the event
@@ -102,7 +102,7 @@ class Mixpanel(object):
         }
         if meta:
             event.update(meta)
-        self._consumer.send('events', json_dumps(event, cls=self._serializer))
+        self._consumer.send('events', json_dumps(event, cls=self._serializer), proxies)
 
     def import_data(self, api_key, distinct_id, event_name, timestamp,
                     properties=None, meta=None, api_secret=None):
@@ -574,7 +574,7 @@ class Consumer(object):
         self._session = requests.Session()
         self._session.mount('http', adapter)
 
-    def send(self, endpoint, json_message, api_key=None, api_secret=None):
+    def send(self, endpoint, json_message, api_key=None, api_secret=None, proxies=None):
         """Immediately record an event or a profile update.
 
         :param endpoint: the Mixpanel API endpoint appropriate for the message
@@ -591,9 +591,9 @@ class Consumer(object):
         if endpoint not in self._endpoints:
             raise MixpanelException('No such endpoint "{0}". Valid endpoints are one of {1}'.format(endpoint, self._endpoints.keys()))
 
-        self._write_request(self._endpoints[endpoint], json_message, api_key, api_secret)
+        self._write_request(self._endpoints[endpoint], json_message, api_key, api_secret, proxies)
 
-    def _write_request(self, request_url, json_message, api_key=None, api_secret=None):
+    def _write_request(self, request_url, json_message, api_key=None, api_secret=None, proxies=None):
         if isinstance(api_key, tuple):
             # For compatibility with subclassers, allow the auth details to be
             # packed into the existing api_key param.
@@ -612,7 +612,6 @@ class Consumer(object):
             basic_auth = HTTPBasicAuth(api_secret, '')
 
         try:
-            proxies = {'http': 'http://username:password@ip:port', 'https': 'http://username:password@ip:port'}
             response = self._session.post(
                 request_url,
                 data=params,
