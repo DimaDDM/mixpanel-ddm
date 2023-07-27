@@ -73,7 +73,7 @@ class Mixpanel(object):
     def _make_insert_id(self):
         return uuid.uuid4().hex
 
-    def track(self, distinct_id, event_name, proxies=None, properties=None, meta=None):
+    def track(self, distinct_id, event_name, properties=None, proxies=None, meta=None):
         """Record an event.
 
         :param str distinct_id: identifies the user triggering the event
